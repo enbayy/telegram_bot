@@ -8,7 +8,7 @@ import requests
 import time
 import re
 
-def amazon_urunleri(url, chromedriver_yolu, max_urun=10):
+def amazon_indirimli_urunler(url, chromedriver_yolu, max_urun=10):
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--disable-gpu")
@@ -37,11 +37,17 @@ def amazon_urunleri(url, chromedriver_yolu, max_urun=10):
 
         random.shuffle(urunler)
 
-        for urun in urunler[:max_urun]:
+        for urun in urunler:
             try:
+                # İndirim kontrolü (eski fiyat varsa indirimdedir)
+                try:
+                    eski_fiyat = urun.find_element(By.CSS_SELECTOR, "span.a-text-price > span.a-offscreen").text.strip()
+                except:
+                    continue  # Eski fiyat yoksa indirim yok, atla
+
                 baslik = urun.find_element(By.CSS_SELECTOR, "h2 span").text.strip()
             except:
-                baslik = "Başlık yok"
+                continue
 
             uzun_link = ""
             try:
@@ -50,7 +56,7 @@ def amazon_urunleri(url, chromedriver_yolu, max_urun=10):
                 if href:
                     uzun_link = href.strip()
             except:
-                uzun_link = ""
+                pass
 
             if not uzun_link:
                 urun_id = urun.get_attribute("data-asin")
@@ -84,8 +90,12 @@ def amazon_urunleri(url, chromedriver_yolu, max_urun=10):
             urun_listesi.append({
                 "baslik": baslik,
                 "link": link,
-                "fiyat": fiyat
+                "fiyat": fiyat,
+                "eski_fiyat": eski_fiyat
             })
+
+            if len(urun_listesi) >= max_urun:
+                break
 
     except Exception as e:
         print("Hata oluştu:", e)
@@ -115,7 +125,7 @@ def telegram_gonder(token, chat_id, mesaj, max_length=4000):
 
 
 if __name__ == "__main__":
-    chromedriver_yolu = r"C:\chromedriver-win64\chromedriver.exe"  # chromedriver yolunu kendine göre değiştir
+    chromedriver_yolu = r"C:\chromedriver-win64\chromedriver.exe"
 
     kategori_listesi = [
         "telefon", "tablet", "kulaklık", "kamera", "bilgisayar", "oyun-konsolu", "akıllı-saat", "ev-aksesuarları"
@@ -123,27 +133,24 @@ if __name__ == "__main__":
 
     toplam_urun_sayisi = 10
     urunler_tumu = []
-
-    # Kategorilerden karışık ürün toplamak için:
-    # Her kategoriden max 3 ürün çekelim, toplam 10 ürün olacak şekilde sınırla
-    max_urun_kategori = 3
+    max_urun_kategori = 5  # Her kategoriden max indirimli ürün
 
     for kategori in kategori_listesi:
         url = f"https://www.amazon.com.tr/s?k={kategori}"
-        urunler = amazon_urunleri(url, chromedriver_yolu, max_urun=max_urun_kategori)
+        urunler = amazon_indirimli_urunler(url, chromedriver_yolu, max_urun=max_urun_kategori)
         urunler_tumu.extend(urunler)
         if len(urunler_tumu) >= toplam_urun_sayisi:
             break
 
-    # Toplam ürün sayısını 10'a indiriyoruz (fazlalık varsa)
     urunler_tumu = urunler_tumu[:toplam_urun_sayisi]
 
     if urunler_tumu:
-        mesaj = ""
+        mesaj = "<b>📉 İndirimli Ürünler</b>\n\n"
         for index, urun in enumerate(urunler_tumu, 1):
             mesaj += f"<b>Ürün {index}:</b>\n"
             mesaj += f"<b>Başlık:</b> {urun['baslik']}\n"
-            mesaj += f"<b>Fiyat:</b> {urun['fiyat']}\n"
+            mesaj += f"<b>Eski Fiyat:</b> {urun['eski_fiyat']}\n"
+            mesaj += f"<b>İndirimli Fiyat:</b> {urun['fiyat']}\n"
             mesaj += f"<b>Link:</b> {urun['link']}\n\n"
 
         token = "8416847183:AAFaskljy6TjiPIOQR20vyrhGcC3njC80nQ"
@@ -153,4 +160,4 @@ if __name__ == "__main__":
             sonuc = telegram_gonder(token, chat_id, mesaj)
             print(f"Chat ID {chat_id} için gönderim sonucu:", sonuc)
     else:
-        print("Ürün çekilemedi.")
+        print("İndirimli ürün bulunamadı.")
